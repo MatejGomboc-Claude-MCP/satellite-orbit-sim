@@ -83,33 +83,89 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${imgui_SOURCE_DIR} ${imgui_S
 # Ensure shader directory exists
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
 
-# Find glslc compiler
-find_program(GLSLC_EXECUTABLE glslc HINTS
-    ${Vulkan_GLSLC_EXECUTABLE}
+# Find DirectX Shader Compiler (dxc) - used for HLSL shaders
+find_program(DXC_EXECUTABLE dxc HINTS
     $ENV{VULKAN_SDK}/bin
     ${VULKAN_SDK}/bin
+    $ENV{DXC_PATH}
+    $ENV{DXC_PATH}/bin
 )
 
-if(NOT GLSLC_EXECUTABLE)
-    message(FATAL_ERROR "glslc shader compiler not found!")
+if(NOT DXC_EXECUTABLE)
+    message(WARNING "DirectX Shader Compiler (dxc) not found! Using glslc as fallback.")
+    # Try to find glslc as fallback
+    find_program(GLSLC_EXECUTABLE glslc HINTS
+        ${Vulkan_GLSLC_EXECUTABLE}
+        $ENV{VULKAN_SDK}/bin
+        ${VULKAN_SDK}/bin
+    )
+    
+    if(NOT GLSLC_EXECUTABLE)
+        message(FATAL_ERROR "Neither dxc nor glslc shader compiler found! Please install the Vulkan SDK with shader compilers.")
+    endif()
 endif()
 
-# Compile shaders
-file(GLOB SHADER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag")
-foreach(SHADER ${SHADER_SOURCES})
-    get_filename_component(SHADER_NAME ${SHADER} NAME)
-    set(SHADER_OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
+# Compile HLSL shaders with dxc
+if(DXC_EXECUTABLE)
+    message(STATUS "Using DirectX Shader Compiler (dxc) for HLSL shaders: ${DXC_EXECUTABLE}")
+    
+    # Earth shader (vertex + pixel)
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/earth_vert.spv
+        COMMAND ${DXC_EXECUTABLE} -spirv -T vs_6_0 -E VSMain ${CMAKE_CURRENT_SOURCE_DIR}/shaders/earth.hlsl -Fo ${CMAKE_BINARY_DIR}/shaders/earth_vert.spv
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/earth.hlsl
+        COMMENT "Compiling Earth vertex shader (HLSL)"
+    )
     
     add_custom_command(
-        OUTPUT ${SHADER_OUTPUT}
-        COMMAND ${GLSLC_EXECUTABLE} ${SHADER} -o ${SHADER_OUTPUT}
-        DEPENDS ${SHADER}
-        COMMENT "Compiling shader ${SHADER_NAME}"
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/earth_frag.spv
+        COMMAND ${DXC_EXECUTABLE} -spirv -T ps_6_0 -E PSMain ${CMAKE_CURRENT_SOURCE_DIR}/shaders/earth.hlsl -Fo ${CMAKE_BINARY_DIR}/shaders/earth_frag.spv
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/earth.hlsl
+        COMMENT "Compiling Earth fragment shader (HLSL)"
     )
-    list(APPEND SHADER_BINARIES ${SHADER_OUTPUT})
-endforeach()
+    
+    # Satellite shader (vertex + pixel)
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/satellite_vert.spv
+        COMMAND ${DXC_EXECUTABLE} -spirv -T vs_6_0 -E VSMain ${CMAKE_CURRENT_SOURCE_DIR}/shaders/satellite.hlsl -Fo ${CMAKE_BINARY_DIR}/shaders/satellite_vert.spv
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/satellite.hlsl
+        COMMENT "Compiling Satellite vertex shader (HLSL)"
+    )
+    
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/satellite_frag.spv
+        COMMAND ${DXC_EXECUTABLE} -spirv -T ps_6_0 -E PSMain ${CMAKE_CURRENT_SOURCE_DIR}/shaders/satellite.hlsl -Fo ${CMAKE_BINARY_DIR}/shaders/satellite_frag.spv
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/satellite.hlsl
+        COMMENT "Compiling Satellite fragment shader (HLSL)"
+    )
+else()
+    # Fallback to glslc for GLSL shaders (just in case)
+    message(STATUS "Falling back to glslc for GLSL shaders: ${GLSLC_EXECUTABLE}")
+    
+    # Compile GLSL shaders if we still have them
+    file(GLOB SHADER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag")
+    foreach(SHADER ${SHADER_SOURCES})
+        get_filename_component(SHADER_NAME ${SHADER} NAME)
+        set(SHADER_OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
+        
+        add_custom_command(
+            OUTPUT ${SHADER_OUTPUT}
+            COMMAND ${GLSLC_EXECUTABLE} ${SHADER} -o ${SHADER_OUTPUT}
+            DEPENDS ${SHADER}
+            COMMENT "Compiling shader ${SHADER_NAME} (GLSL fallback)"
+        )
+        list(APPEND SHADER_BINARIES ${SHADER_OUTPUT})
+    endforeach()
+endif()
 
-add_custom_target(shaders ALL DEPENDS ${SHADER_BINARIES})
+# Create a custom target for all shaders
+add_custom_target(shaders ALL 
+    DEPENDS 
+        ${CMAKE_BINARY_DIR}/shaders/earth_vert.spv
+        ${CMAKE_BINARY_DIR}/shaders/earth_frag.spv
+        ${CMAKE_BINARY_DIR}/shaders/satellite_vert.spv
+        ${CMAKE_BINARY_DIR}/shaders/satellite_frag.spv
+)
 add_dependencies(${PROJECT_NAME} shaders)
 
 # Platform-specific settings
