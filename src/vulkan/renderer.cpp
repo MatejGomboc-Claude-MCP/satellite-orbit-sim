@@ -120,10 +120,10 @@ bool Renderer::beginFrame() {
         m_imageAvailableSemaphores[m_currentFrame], m_currentImageIndex);
     
     // Check if we need to recreate the swapchain
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        // TODO: Implement swapchain recreation
-        return false;
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        recreateSwapchain();
+        return false;  // Skip this frame
+    } else if (result != VK_SUCCESS) {
         throw std::runtime_error("Failed to acquire swapchain image!");
     }
     
@@ -149,10 +149,13 @@ bool Renderer::beginFrame() {
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_swapchain->getExtent();
     
-    // Clear color (space background)
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.05f, 1.0f}}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
+    // Setup clear values (color and depth)
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = {0.0f, 0.0f, 0.05f, 1.0f};  // Dark blue space background
+    clearValues[1].depthStencil = {1.0f, 0};           // Depth clear value (1.0 is "far")
+    
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
     
     vkCmdBeginRenderPass(m_commandBuffers[m_currentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     
@@ -201,13 +204,64 @@ void Renderer::endFrame() {
     
     // Check for swapchain recreation
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        // TODO: Implement swapchain recreation
+        recreateSwapchain();
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error("Failed to present swap chain image!");
     }
     
     // Advance to the next frame
     m_currentFrame = (m_currentFrame + 1) % m_imageAvailableSemaphores.size();
+}
+
+void Renderer::recreateSwapchain() {
+    std::cout << "Recreating swapchain..." << std::endl;
+    
+    // Handle window minimization - wait until the window is visible again
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(m_window, &width, &height);
+        glfwWaitEvents();
+    }
+    
+    // Wait for all GPU operations to complete
+    vkDeviceWaitIdle(m_instance->getLogicalDevice());
+    
+    // Cleanup old swapchain and related resources
+    
+    // Clean up descriptor sets (will be recreated)
+    vkDestroyDescriptorPool(m_instance->getLogicalDevice(), m_descriptorPool, nullptr);
+    
+    // We don't need to destroy the descriptor set layout
+    
+    // Clean up uniform buffers
+    for (auto& uniformBuffer : m_uniformBuffers) {
+        vkDestroyBuffer(m_instance->getLogicalDevice(), uniformBuffer.buffer, nullptr);
+        vkFreeMemory(m_instance->getLogicalDevice(), uniformBuffer.memory, nullptr);
+    }
+    m_uniformBuffers.clear();
+    
+    // Keep pipelines and pipeline layout
+    
+    // Recreate swapchain
+    m_swapchain = std::make_unique<VulkanSwapchain>(m_window, m_instance.get(), m_renderPass);
+    
+    // Recreate descriptor resources
+    createDescriptorResources();
+    
+    // Recreate uniform buffers
+    createUniformBuffers();
+    
+    // Update projection matrix for new swapchain dimensions
+    m_projectionMatrix = glm::perspective(
+        glm::radians(45.0f),
+        static_cast<float>(m_swapchain->getExtent().width) / static_cast<float>(m_swapchain->getExtent().height),
+        0.1f,
+        100.0f
+    );
+    m_projectionMatrix[1][1] *= -1;  // Adjust for Vulkan's coordinate system
+    
+    std::cout << "Swapchain recreated successfully" << std::endl;
 }
 
 void Renderer::updateCamera(const glm::vec3& position, const glm::vec3& target) {
@@ -387,42 +441,59 @@ VkCommandBuffer Renderer::getCurrentCommandBuffer() const {
 }
 
 void Renderer::createRenderPass() {
-    // Color attachment description
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = m_swapchain->getImageFormat();
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    // Attachment descriptions
+    std::array<VkAttachmentDescription, 2> attachments = {};
     
-    // Color attachment reference
-    VkAttachmentReference colorAttachmentRef{};
+    // Color attachment
+    attachments[0].format = m_swapchain->getImageFormat();
+    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    
+    // Depth attachment
+    attachments[1].format = findDepthFormat();
+    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    
+    // Attachment references
+    VkAttachmentReference colorAttachmentRef = {};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     
+    VkAttachmentReference depthAttachmentRef = {};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    
     // Subpass description
-    VkSubpassDescription subpass{};
+    VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
     
     // Subpass dependency
-    VkSubpassDependency dependency{};
+    VkSubpassDependency dependency = {};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     
     // Create render pass
-    VkRenderPassCreateInfo renderPassInfo{};
+    VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -431,6 +502,29 @@ void Renderer::createRenderPass() {
     if (vkCreateRenderPass(m_instance->getLogicalDevice(), &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create render pass!");
     }
+}
+
+VkFormat Renderer::findDepthFormat() {
+    return findSupportedFormat(
+        {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+    );
+}
+
+VkFormat Renderer::findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
+    for (VkFormat format : candidates) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(m_instance->getPhysicalDevice(), format, &props);
+        
+        if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
+            return format;
+        } else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
+            return format;
+        }
+    }
+    
+    throw std::runtime_error("Failed to find supported format!");
 }
 
 void Renderer::createGraphicsPipelines() {
@@ -575,11 +669,23 @@ void Renderer::createGraphicsPipelines() {
     satelliteRasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     satelliteRasterizer.depthBiasEnable = VK_FALSE;
     
+    // Enable larger point sizes for the satellite
+    satelliteRasterizer.depthBiasEnable = VK_FALSE;
+    
     // Multisampling (disabled)
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    
+    // Depth stencil state - add depth testing
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
     
     // Color blending for Earth (opaque)
     VkPipelineColorBlendAttachmentState earthColorBlendAttachment{};
@@ -613,11 +719,17 @@ void Renderer::createGraphicsPipelines() {
     satelliteColorBlending.attachmentCount = 1;
     satelliteColorBlending.pAttachments = &satelliteColorBlendAttachment;
     
-    // Dynamic state (none)
+    // Dynamic states - make point size dynamic for satellite
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_LINE_WIDTH
+    };
+    
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = 0;
-    dynamicState.pDynamicStates = nullptr;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
     
     // Pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
@@ -639,7 +751,7 @@ void Renderer::createGraphicsPipelines() {
     earthPipelineInfo.pViewportState = &viewportState;
     earthPipelineInfo.pRasterizationState = &earthRasterizer;
     earthPipelineInfo.pMultisampleState = &multisampling;
-    earthPipelineInfo.pDepthStencilState = nullptr;
+    earthPipelineInfo.pDepthStencilState = &depthStencil;
     earthPipelineInfo.pColorBlendState = &earthColorBlending;
     earthPipelineInfo.pDynamicState = &dynamicState;
     earthPipelineInfo.layout = m_pipelineLayout;
@@ -657,7 +769,7 @@ void Renderer::createGraphicsPipelines() {
     satellitePipelineInfo.pViewportState = &viewportState;
     satellitePipelineInfo.pRasterizationState = &satelliteRasterizer;
     satellitePipelineInfo.pMultisampleState = &multisampling;
-    satellitePipelineInfo.pDepthStencilState = nullptr;
+    satellitePipelineInfo.pDepthStencilState = &depthStencil;
     satellitePipelineInfo.pColorBlendState = &satelliteColorBlending;
     satellitePipelineInfo.pDynamicState = &dynamicState;
     satellitePipelineInfo.layout = m_pipelineLayout;
