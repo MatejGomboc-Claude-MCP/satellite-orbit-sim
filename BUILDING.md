@@ -16,6 +16,7 @@ Before building the project, you need to install:
 3. **Vulkan SDK 1.2 or newer**: [Download from LunarG](https://vulkan.lunarg.com/sdk/home)
    - Make sure the Vulkan SDK is properly installed and environment variables are set up
    - The `VULKAN_SDK` environment variable should point to your Vulkan SDK installation
+   - Ensure DirectX Shader Compiler (DXC) is included in your Vulkan SDK installation for HLSL support
 
 ## Building on Windows
 
@@ -115,27 +116,44 @@ Before building the project, you need to install:
    ./bin/SatelliteOrbitSim
    ```
 
-## Building Shaders
+## Building HLSL Shaders
 
-The shaders will be compiled automatically during the build process if you have the Vulkan SDK installed correctly. The `glslc` compiler from the Vulkan SDK is used to compile the GLSL shaders to SPIR-V bytecode.
+This project uses DirectX-style HLSL shaders that are compiled to SPIR-V bytecode for Vulkan. The build system is configured to use the DirectX Shader Compiler (DXC) from the Vulkan SDK.
 
-If you need to manually compile the shaders:
+The shaders will be compiled automatically during the build process if you have the Vulkan SDK with DXC installed correctly. If DXC isn't found, the build system will fall back to using glslc for GLSL shaders.
+
+If you want to manually compile the HLSL shaders:
 
 ```
-glslc shaders/earth.vert -o shaders/earth.vert.spv
-glslc shaders/earth.frag -o shaders/earth.frag.spv
-glslc shaders/satellite.vert -o shaders/satellite.vert.spv
-glslc shaders/satellite.frag -o shaders/satellite.frag.spv
+# Compile Earth vertex shader
+dxc -spirv -T vs_6_0 -E VSMain shaders/earth.hlsl -Fo shaders/earth_vert.spv
+
+# Compile Earth pixel shader
+dxc -spirv -T ps_6_0 -E PSMain shaders/earth.hlsl -Fo shaders/earth_frag.spv
+
+# Compile Satellite vertex shader
+dxc -spirv -T vs_6_0 -E VSMain shaders/satellite.hlsl -Fo shaders/satellite_vert.spv
+
+# Compile Satellite pixel shader
+dxc -spirv -T ps_6_0 -E PSMain shaders/satellite.hlsl -Fo shaders/satellite_frag.spv
 ```
+
+Note the following differences compared to GLSL compilation:
+- We use `-T vs_6_0` or `-T ps_6_0` to specify shader type and profile
+- We use `-E VSMain` or `-E PSMain` to specify the entry point function name
+- Both vertex and pixel shaders can be in a single HLSL file with different entry points
 
 ## Troubleshooting
 
-### Vulkan SDK not found
+### Vulkan SDK or DirectX Shader Compiler not found
 
-If CMake cannot find the Vulkan SDK, make sure:
+If CMake cannot find the Vulkan SDK or DXC, make sure:
 1. The Vulkan SDK is properly installed
 2. The `VULKAN_SDK` environment variable is set
-3. On Windows, you may need to restart your terminal or IDE after installing the SDK
+3. DirectX Shader Compiler (dxc) is included in your Vulkan SDK
+4. On Windows, you may need to restart your terminal or IDE after installing the SDK
+
+You can manually set the DXC path using the environment variable `DXC_PATH` if it's installed separately.
 
 ### Missing GLFW, GLM, or ImGui
 
@@ -147,9 +165,10 @@ These dependencies are automatically downloaded and built by the CMake script us
 ### Shader Compilation Errors
 
 If you encounter shader compilation errors:
-1. Make sure the Vulkan SDK's `glslc` compiler is in your PATH
+1. Make sure the Vulkan SDK's DirectX Shader Compiler (`dxc`) is in your PATH
 2. Look for syntax errors in the shader files
-3. Check that the shader version (#version directive) is supported by your GPU
+3. If DXC isn't available, the build will try to use `glslc` with the legacy GLSL shaders
+4. Check that your HLSL shader code conforms to the features available in the shader model you're targeting (typically vs_6_0/ps_6_0)
 
 ### Runtime Errors
 
@@ -157,5 +176,6 @@ If the application fails to run:
 1. Check that your GPU supports Vulkan
 2. Update your graphics drivers
 3. Make sure you're running from the correct directory so the application can find the shader files
+4. Verify that the shader files were correctly compiled to SPIR-V
 
 For any other issues, please open an issue on the GitHub repository.
