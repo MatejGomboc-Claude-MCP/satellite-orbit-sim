@@ -5,6 +5,7 @@ struct VSInput {
 
 struct VSOutput {
     float4 position : SV_POSITION;
+    float pointSize : PSIZE;
 };
 
 cbuffer UniformBufferObject : register(b0) {
@@ -19,33 +20,30 @@ VSOutput VSMain(VSInput input) {
     // Transform the satellite position to clip space
     output.position = mul(proj, mul(view, mul(model, float4(input.position, 1.0))));
     
-    // Point size is handled via the pipeline's rasterizer state in Vulkan
-    // This will be set to a fixed size in the renderer
+    // Set the point size for the satellite
+    output.pointSize = 10.0;
     
     return output;
 }
 
 // Pixel Shader
 float4 PSMain(VSOutput input, float2 pointCoord : SV_Position) : SV_TARGET {
-    // In DirectX/HLSL, for point sprites we can use the fragment's position
-    // to determine the distance from the center
-
-    // Get the current screen pixel position
-    float2 fragCoord = pointCoord.xy;
+    // In HLSL for Vulkan via SPIR-V, we can access the point coordinates
+    // via a system-generated value during rasterization
     
-    // Get the center of the point sprite
-    float2 center = fragCoord;
+    // Calculate center-relative coordinates
+    float2 uv = pointCoord.xy; 
     
-    // Calculate distance from center (normalized to 0-1)
-    float dist = length(center) / 10.0; // Scale based on point size
+    // Calculate distance from center (using normalized device coordinates)
+    float2 center = float2(0.5, 0.5);
+    float dist = length(uv - center) * 2.0;  
     
     // Create a circular point with soft edges
     float alpha = 1.0 - smoothstep(0.4, 0.5, dist);
     
-    // If outside the circle, discard the fragment
-    if (alpha <= 0.0) {
+    // Discard pixels outside the circle
+    if (alpha < 0.01)
         discard;
-    }
     
     // Set the satellite color (bright white/yellow)
     float4 color = float4(1.0, 0.9, 0.5, alpha);
