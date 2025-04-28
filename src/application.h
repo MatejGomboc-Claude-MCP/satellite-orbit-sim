@@ -31,6 +31,13 @@ public:
      */
     void run();
 
+    /**
+     * Handle mouse scroll events to adjust camera zoom.
+     * 
+     * @param yoffset Vertical scroll offset
+     */
+    void handleMouseScroll(double yoffset);
+
 private:
     /**
      * Process keyboard and mouse input events.
@@ -78,4 +85,8 @@ private:
     bool m_mousePressed;
     double m_lastMouseX;
     double m_lastMouseY;
+    
+    // UI state
+    bool m_showHelpWindow = false;
+    bool m_showAboutWindow = false;
 };
