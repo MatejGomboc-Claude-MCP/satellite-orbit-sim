@@ -140,6 +140,11 @@ private:
     glm::mat4 m_projectionMatrix;
     
     /**
+     * Recreates the swapchain when the window is resized.
+     */
+    void recreateSwapchain();
+
+    /**
      * Creates the render pass.
      */
     void createRenderPass();
@@ -193,10 +198,38 @@ private:
                      VkBuffer& buffer, VkDeviceMemory& bufferMemory);
     
     /**
+     * Finds a suitable memory type for allocation.
+     * 
+     * @param typeFilter Type filter from memory requirements
+     * @param properties Required memory properties
+     * @return Index of a suitable memory type
+     */
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    
+    /**
      * Loads a shader module from a file.
      * 
      * @param filename Shader file path
      * @return Shader module handle
      */
     VkShaderModule createShaderModule(const std::string& filename);
+
+    /**
+     * Finds a suitable depth format supported by the device.
+     * 
+     * @return A supported depth format
+     */
+    VkFormat findDepthFormat();
+
+    /**
+     * Finds a supported format from a list of candidates.
+     * 
+     * @param candidates List of candidate formats to check
+     * @param tiling Tiling mode (linear or optimal)
+     * @param features Required format features
+     * @return The first supported format from the candidates
+     */
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, 
+                                VkImageTiling tiling, 
+                                VkFormatFeatureFlags features);
 };
