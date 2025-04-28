@@ -91,23 +91,17 @@ find_program(DXC_EXECUTABLE dxc HINTS
     $ENV{DXC_PATH}/bin
 )
 
-if(NOT DXC_EXECUTABLE)
-    message(WARNING "DirectX Shader Compiler (dxc) not found! Using glslc as fallback.")
-    # Try to find glslc as fallback
-    find_program(GLSLC_EXECUTABLE glslc HINTS
-        ${Vulkan_GLSLC_EXECUTABLE}
-        $ENV{VULKAN_SDK}/bin
-        ${VULKAN_SDK}/bin
-    )
-    
-    if(NOT GLSLC_EXECUTABLE)
-        message(FATAL_ERROR "Neither dxc nor glslc shader compiler found! Please install the Vulkan SDK with shader compilers.")
-    endif()
-endif()
+# Try to find glslc compiler - used for fallback GLSL shaders
+find_program(GLSLC_EXECUTABLE glslc HINTS
+    ${Vulkan_GLSLC_EXECUTABLE}
+    $ENV{VULKAN_SDK}/bin
+    ${VULKAN_SDK}/bin
+)
 
-# Compile HLSL shaders with dxc
+# Set shader compiler to use
 if(DXC_EXECUTABLE)
     message(STATUS "Using DirectX Shader Compiler (dxc) for HLSL shaders: ${DXC_EXECUTABLE}")
+    set(USE_HLSL TRUE)
     
     # Earth shader (vertex + pixel)
     add_custom_command(
@@ -138,34 +132,189 @@ if(DXC_EXECUTABLE)
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/satellite.hlsl
         COMMENT "Compiling Satellite fragment shader (HLSL)"
     )
-else()
-    # Fallback to glslc for GLSL shaders (just in case)
-    message(STATUS "Falling back to glslc for GLSL shaders: ${GLSLC_EXECUTABLE}")
     
-    # Compile GLSL shaders if we still have them
-    file(GLOB SHADER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag")
-    foreach(SHADER ${SHADER_SOURCES})
-        get_filename_component(SHADER_NAME ${SHADER} NAME)
-        set(SHADER_OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
-        
-        add_custom_command(
-            OUTPUT ${SHADER_OUTPUT}
-            COMMAND ${GLSLC_EXECUTABLE} ${SHADER} -o ${SHADER_OUTPUT}
-            DEPENDS ${SHADER}
-            COMMENT "Compiling shader ${SHADER_NAME} (GLSL fallback)"
-        )
-        list(APPEND SHADER_BINARIES ${SHADER_OUTPUT})
-    endforeach()
-endif()
-
-# Create a custom target for all shaders
-add_custom_target(shaders ALL 
-    DEPENDS 
+    # Create list of shader outputs
+    set(SHADER_OUTPUTS
         ${CMAKE_BINARY_DIR}/shaders/earth_vert.spv
         ${CMAKE_BINARY_DIR}/shaders/earth_frag.spv
         ${CMAKE_BINARY_DIR}/shaders/satellite_vert.spv
         ${CMAKE_BINARY_DIR}/shaders/satellite_frag.spv
-)
+    )
+    
+elseif(GLSLC_EXECUTABLE)
+    message(STATUS "Using glslc for GLSL shaders: ${GLSLC_EXECUTABLE}")
+    set(USE_HLSL FALSE)
+    
+    # Create fallback GLSL shaders
+    message(STATUS "Creating fallback GLSL shaders")
+    
+    # Earth vertex shader (GLSL)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/shaders/earth.vert
+"#version 450
+
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 inNormal;
+
+layout(location = 0) out vec3 fragPosition;
+layout(location = 1) out vec3 fragNormal;
+layout(location = 2) out vec3 fragColor;
+
+layout(binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+} ubo;
+
+void main() {
+    // Earth color (blue with some green)
+    fragColor = vec3(0.0, 0.3, 0.8);
+    
+    // Transform position to world space
+    vec4 worldPosition = ubo.model * vec4(inPosition, 1.0);
+    
+    // Pass world position to fragment shader
+    fragPosition = worldPosition.xyz;
+    
+    // Transform normal to world space
+    fragNormal = mat3(ubo.model) * inNormal;
+    
+    // Project to screen coordinates
+    gl_Position = ubo.proj * ubo.view * worldPosition;
+}
+")
+
+    # Earth fragment shader (GLSL)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/shaders/earth.frag
+"#version 450
+
+layout(location = 0) in vec3 fragPosition;
+layout(location = 1) in vec3 fragNormal;
+layout(location = 2) in vec3 fragColor;
+
+layout(location = 0) out vec4 outColor;
+
+void main() {
+    // Use a simple lighting model
+    
+    // Define light direction (from the center outward)
+    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+    
+    // Normalize the fragment normal
+    vec3 normal = normalize(fragNormal);
+    
+    // Calculate diffuse component
+    float diff = max(dot(normal, lightDir), 0.0);
+    
+    // Add ambient lighting
+    float ambient = 0.2;
+    
+    // Calculate the final lighting
+    float lighting = ambient + diff * 0.8;
+    
+    // Apply lighting to the color
+    outColor = vec4(fragColor * lighting, 1.0);
+    
+    // Add a slight atmospheric glow at the edges
+    float rim = 1.0 - max(dot(normalize(-fragPosition), normal), 0.0);
+    rim = pow(rim, 4.0);
+    
+    // Mix in the rim light (subtle blue glow)
+    outColor.rgb = mix(outColor.rgb, vec3(0.3, 0.7, 1.0), rim * 0.3);
+}
+")
+
+    # Satellite vertex shader (GLSL)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/shaders/satellite.vert
+"#version 450
+
+layout(location = 0) in vec3 inPosition;
+
+layout(binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+} ubo;
+
+void main() {
+    // Transform the satellite position to clip space
+    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
+    
+    // Set the point size (satellite will be rendered as a point)
+    gl_PointSize = 10.0;
+}
+")
+
+    # Satellite fragment shader (GLSL)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/shaders/satellite.frag
+"#version 450
+
+layout(location = 0) out vec4 outColor;
+
+void main() {
+    // Calculate distance from center of point
+    vec2 center = gl_PointCoord - vec2(0.5);
+    float dist = length(center);
+    
+    // Create a circular point with soft edges
+    float alpha = 1.0 - smoothstep(0.4, 0.5, dist);
+    
+    // Set the satellite color (bright white/yellow)
+    outColor = vec4(1.0, 0.9, 0.5, alpha);
+    
+    // Add a glow effect
+    if (dist > 0.2) {
+        // Outer glow (yellow/orange)
+        vec3 glowColor = vec3(1.0, 0.6, 0.2);
+        float glowIntensity = smoothstep(0.5, 0.2, dist);
+        
+        // Mix the glow color with the base color
+        outColor.rgb = mix(glowColor, outColor.rgb, glowIntensity);
+    }
+}
+")
+
+    # Compile GLSL shaders with glslc
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/earth_vert.spv
+        COMMAND ${GLSLC_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/shaders/earth.vert -o ${CMAKE_BINARY_DIR}/shaders/earth_vert.spv
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders/earth.vert
+        COMMENT "Compiling Earth vertex shader (GLSL)"
+    )
+    
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/earth_frag.spv
+        COMMAND ${GLSLC_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/shaders/earth.frag -o ${CMAKE_BINARY_DIR}/shaders/earth_frag.spv
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders/earth.frag
+        COMMENT "Compiling Earth fragment shader (GLSL)"
+    )
+    
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/satellite_vert.spv
+        COMMAND ${GLSLC_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/shaders/satellite.vert -o ${CMAKE_BINARY_DIR}/shaders/satellite_vert.spv
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders/satellite.vert
+        COMMENT "Compiling Satellite vertex shader (GLSL)"
+    )
+    
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/shaders/satellite_frag.spv
+        COMMAND ${GLSLC_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/shaders/satellite.frag -o ${CMAKE_BINARY_DIR}/shaders/satellite_frag.spv
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders/satellite.frag
+        COMMENT "Compiling Satellite fragment shader (GLSL)"
+    )
+    
+    # Create list of shader outputs
+    set(SHADER_OUTPUTS
+        ${CMAKE_BINARY_DIR}/shaders/earth_vert.spv
+        ${CMAKE_BINARY_DIR}/shaders/earth_frag.spv
+        ${CMAKE_BINARY_DIR}/shaders/satellite_vert.spv
+        ${CMAKE_BINARY_DIR}/shaders/satellite_frag.spv
+    )
+else()
+    message(FATAL_ERROR "Neither dxc nor glslc shader compiler found! Please install the Vulkan SDK with shader compilers.")
+endif()
+
+# Add a target for the shaders
+add_custom_target(shaders ALL DEPENDS ${SHADER_OUTPUTS})
 add_dependencies(${PROJECT_NAME} shaders)
 
 # Platform-specific settings
@@ -181,6 +330,11 @@ elseif(UNIX AND NOT APPLE)
     target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_XCB_KHR)
     find_package(X11 REQUIRED)
     target_link_libraries(${PROJECT_NAME} PRIVATE X11::X11)
+endif()
+
+# Pass shader type to C++ code
+if(USE_HLSL)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_HLSL)
 endif()
 
 # Create directories structure
