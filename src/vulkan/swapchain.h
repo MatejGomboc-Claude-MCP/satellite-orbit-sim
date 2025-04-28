@@ -64,6 +64,12 @@ private:
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
     
+    // Depth buffer resources
+    VkImage m_depthImage;
+    VkDeviceMemory m_depthImageMemory;
+    VkImageView m_depthImageView;
+    VkFormat m_depthFormat;
+    
     /**
      * Queries swapchain support details for a physical device.
      * 
@@ -111,6 +117,66 @@ private:
      * Creates image views for the swapchain images.
      */
     void createImageViews();
+    
+    /**
+     * Creates a depth buffer image and view.
+     */
+    void createDepthResources();
+    
+    /**
+     * Finds a suitable depth format supported by the device.
+     * 
+     * @return A supported depth format
+     */
+    VkFormat findDepthFormat();
+    
+    /**
+     * Finds a supported format from a list of candidates.
+     * 
+     * @param candidates List of candidate formats to check
+     * @param tiling Tiling mode (linear or optimal)
+     * @param features Required format features
+     * @return The first supported format from the candidates
+     */
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, 
+                               VkImageTiling tiling, 
+                               VkFormatFeatureFlags features);
+    
+    /**
+     * Creates an image.
+     * 
+     * @param width Image width
+     * @param height Image height
+     * @param format Image format
+     * @param tiling Image tiling mode
+     * @param usage Image usage flags
+     * @param properties Memory property flags
+     * @param image Output image handle
+     * @param imageMemory Output image memory handle
+     */
+    void createImage(uint32_t width, uint32_t height,
+                    VkFormat format, VkImageTiling tiling,
+                    VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+                    VkImage& image, VkDeviceMemory& imageMemory);
+    
+    /**
+     * Creates an image view.
+     * 
+     * @param image Image handle
+     * @param format Image format
+     * @param aspectFlags Image aspect flags
+     * @return The created image view
+     */
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+    
+    /**
+     * Finds a suitable memory type for allocation.
+     * 
+     * @param typeFilter Type filter from memory requirements
+     * @param properties Required memory properties
+     * @return Index of a suitable memory type
+     */
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     
     /**
      * Creates framebuffers for rendering to the swapchain images.
