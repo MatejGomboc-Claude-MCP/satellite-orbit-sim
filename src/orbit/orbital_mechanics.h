@@ -6,7 +6,8 @@
  * Implements Keplerian orbital mechanics for satellite motion.
  * 
  * This class calculates the position of a satellite in an elliptical orbit
- * around Earth using Kepler's equations.
+ * around Earth using Kepler's equations with full support for the six
+ * Keplerian orbital elements.
  */
 class OrbitalMechanics {
 public:
@@ -45,27 +46,27 @@ public:
     float getSemimajorAxis() const { return m_semimajorAxis; }
     float getEccentricity() const { return m_eccentricity; }
     float getInclination() const { return m_inclination; }
-    float getRaan() const { return m_raan; }
-    float getArgPeriapsis() const { return m_argPeriapsis; }
+    float getArgumentOfPeriapsis() const { return m_argumentOfPeriapsis; }
+    float getLongitudeOfAscendingNode() const { return m_longitudeOfAscendingNode; }
     
     // Setters for orbital parameters
     void setSemimajorAxis(float value);
     void setEccentricity(float value);
     void setInclination(float value);
-    void setRaan(float value);
-    void setArgPeriapsis(float value);
+    void setArgumentOfPeriapsis(float value);
+    void setLongitudeOfAscendingNode(float value);
     
 private:
     // Earth parameters (in arbitrary units)
     const float m_earthRadius = 6.371f;  // Earth radius
     const float m_earthMu = 398600.0f;   // Earth gravitational parameter
     
-    // Orbital parameters
-    float m_semimajorAxis;  // Semi-major axis of the elliptical orbit
-    float m_eccentricity;   // Eccentricity of the orbit
-    float m_inclination;    // Inclination in degrees
-    float m_raan;           // Right Ascension of the Ascending Node (RAAN) in degrees
-    float m_argPeriapsis;   // Argument of periapsis in degrees
+    // Orbital parameters (Keplerian elements)
+    float m_semimajorAxis;              // Semi-major axis of the elliptical orbit
+    float m_eccentricity;               // Eccentricity of the orbit
+    float m_inclination;                // Inclination in degrees
+    float m_argumentOfPeriapsis;        // Argument of periapsis in degrees
+    float m_longitudeOfAscendingNode;   // Longitude of ascending node in degrees
     
     // Current state
     float m_meanAnomaly;    // Current mean anomaly (varies linearly with time)
@@ -88,18 +89,18 @@ private:
     float calculatePeriod() const;
     
     /**
-     * Converts eccentric anomaly to position vector in the orbital plane.
+     * Converts eccentric anomaly to position in orbital plane.
      * 
      * @param eccentricAnomaly The eccentric anomaly
-     * @return 2D position vector in the orbital plane
+     * @return 2D position vector in orbital plane
      */
-    glm::vec2 calculatePositionInOrbitalPlane(float eccentricAnomaly) const;
+    glm::vec2 calculateOrbitalPlanePosition(float eccentricAnomaly) const;
     
     /**
-     * Converts position in orbital plane to 3D position in reference frame.
+     * Transforms position from orbital plane to 3D space.
      * 
-     * @param positionInOrbitalPlane 2D position in orbital plane
-     * @return 3D position vector
+     * @param position 2D position in orbital plane
+     * @return 3D position vector in reference frame
      */
-    glm::vec3 transformToReferenceFrame(const glm::vec2& positionInOrbitalPlane) const;
+    glm::vec3 transformToReferenceFrame(const glm::vec2& position) const;
 };
