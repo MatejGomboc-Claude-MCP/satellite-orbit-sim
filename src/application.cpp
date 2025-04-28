@@ -16,17 +16,10 @@ static void glfwErrorCallback(int error, const char* description) {
 static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     // Retrieve the Application instance from user pointer
     Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-    
-    // Adjust camera distance with scroll
+    // Actual implementation is in the Application class
     if (app) {
-        app->adjustCameraDistance(static_cast<float>(-yoffset));
+        app->handleMouseScroll(yoffset);
     }
-}
-
-// Window resize callback
-static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-    // Just mark the window as resized, swapchain recreation happens in renderer
-    // No need to do anything here as the swapchain recreation handles this
 }
 
 Application::Application() 
@@ -55,11 +48,8 @@ Application::Application()
     // Store this pointer for callbacks
     glfwSetWindowUserPointer(m_window, this);
     
-    // Set up mouse scroll callback
+    // Set scroll callback
     glfwSetScrollCallback(m_window, scrollCallback);
-    
-    // Set up window resize callback
-    glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
     
     // Initialize renderer first (sets up Vulkan)
     m_renderer = std::make_unique<Renderer>(m_window);
@@ -143,13 +133,25 @@ void Application::processInput() {
             
             m_lastMouseX = mouseX;
             m_lastMouseY = mouseY;
-            
-            // Update camera based on input
-            updateCamera();
         }
     } else {
         m_mousePressed = false;
     }
+    
+    // Update camera based on input
+    updateCamera();
+}
+
+void Application::handleMouseScroll(double yoffset) {
+    // Handle mouse scroll for zoom
+    m_cameraDistance -= static_cast<float>(yoffset) * 0.5f;
+    
+    // Clamp distance to reasonable values
+    if (m_cameraDistance < 7.0f) m_cameraDistance = 7.0f;
+    if (m_cameraDistance > 50.0f) m_cameraDistance = 50.0f;
+    
+    // Update camera position
+    updateCamera();
 }
 
 void Application::update(float deltaTime) {
@@ -160,7 +162,7 @@ void Application::update(float deltaTime) {
 void Application::render() {
     // Begin frame
     if (!m_renderer->beginFrame()) {
-        return; // Frame was skipped (e.g., window minimized or swapchain being recreated)
+        return; // Frame was skipped (e.g., window minimized)
     }
     
     // Get satellite position from orbital mechanics
@@ -175,7 +177,7 @@ void Application::render() {
     // Render ImGui UI
     m_uiManager->beginFrame();
     
-    // Render UI elements
+    // Render UI elements with ImGui
     ImGui::Begin("Simulation Controls");
     
     // Time controls
@@ -188,15 +190,9 @@ void Application::render() {
     // Camera controls
     ImGui::Separator();
     ImGui::Text("Camera Controls");
-    if (ImGui::SliderFloat("Distance", &m_cameraDistance, 8.0f, 50.0f)) {
-        updateCamera();
-    }
-    if (ImGui::SliderFloat("Yaw", &m_cameraYaw, -180.0f, 180.0f)) {
-        updateCamera();
-    }
-    if (ImGui::SliderFloat("Pitch", &m_cameraPitch, -89.0f, 89.0f)) {
-        updateCamera();
-    }
+    ImGui::SliderFloat("Distance", &m_cameraDistance, 7.0f, 50.0f);
+    ImGui::SliderFloat("Yaw", &m_cameraYaw, -180.0f, 180.0f);
+    ImGui::SliderFloat("Pitch", &m_cameraPitch, -89.0f, 89.0f);
     if (ImGui::Button("Reset Camera")) {
         m_cameraDistance = 15.0f;
         m_cameraYaw = 0.0f;
@@ -206,84 +202,106 @@ void Application::render() {
     
     // Orbit parameters
     ImGui::Separator();
-    ImGui::Text("Orbit Parameters");
+    ImGui::Text("Orbital Elements");
     
-    // Get current parameters
+    // Get current values
     float semimajorAxis = m_orbitalMechanics->getSemimajorAxis();
     float eccentricity = m_orbitalMechanics->getEccentricity();
     float inclination = m_orbitalMechanics->getInclination();
-    float raan = m_orbitalMechanics->getRaan();
-    float argPeriapsis = m_orbitalMechanics->getArgPeriapsis();
+    float argOfPeriapsis = m_orbitalMechanics->getArgumentOfPeriapsis();
+    float longAscNode = m_orbitalMechanics->getLongitudeOfAscendingNode();
     
-    // Create sliders for each parameter
+    // Semi-major axis (orbit size)
     if (ImGui::SliderFloat("Semi-major Axis", &semimajorAxis, 8.0f, 20.0f, "%.1f")) {
         m_orbitalMechanics->setSemimajorAxis(semimajorAxis);
     }
     
+    // Eccentricity (orbit shape)
     if (ImGui::SliderFloat("Eccentricity", &eccentricity, 0.0f, 0.9f, "%.2f")) {
         m_orbitalMechanics->setEccentricity(eccentricity);
     }
     
+    // Inclination (orbit tilt)
     if (ImGui::SliderFloat("Inclination", &inclination, 0.0f, 90.0f, "%.1f deg")) {
         m_orbitalMechanics->setInclination(inclination);
     }
     
-    if (ImGui::SliderFloat("RAAN", &raan, 0.0f, 360.0f, "%.1f deg")) {
-        m_orbitalMechanics->setRaan(raan);
+    // Argument of periapsis (orientation in orbit plane)
+    if (ImGui::SliderFloat("Arg. of Periapsis", &argOfPeriapsis, 0.0f, 360.0f, "%.1f deg")) {
+        m_orbitalMechanics->setArgumentOfPeriapsis(argOfPeriapsis);
     }
     
-    if (ImGui::SliderFloat("Arg. Periapsis", &argPeriapsis, 0.0f, 360.0f, "%.1f deg")) {
-        m_orbitalMechanics->setArgPeriapsis(argPeriapsis);
+    // Longitude of ascending node (orbit plane orientation)
+    if (ImGui::SliderFloat("Long. of Asc. Node", &longAscNode, 0.0f, 360.0f, "%.1f deg")) {
+        m_orbitalMechanics->setLongitudeOfAscendingNode(longAscNode);
     }
     
-    // Preset orbits
-    ImGui::Separator();
-    ImGui::Text("Preset Orbits");
-    
-    if (ImGui::Button("Equatorial")) {
-        m_orbitalMechanics->setSemimajorAxis(12.0f);
-        m_orbitalMechanics->setEccentricity(0.1f);
-        m_orbitalMechanics->setInclination(0.0f);
-        m_orbitalMechanics->setRaan(0.0f);
-        m_orbitalMechanics->setArgPeriapsis(0.0f);
-    }
-    
-    ImGui::SameLine();
-    
-    if (ImGui::Button("Polar")) {
-        m_orbitalMechanics->setSemimajorAxis(12.0f);
-        m_orbitalMechanics->setEccentricity(0.3f);
-        m_orbitalMechanics->setInclination(90.0f);
-        m_orbitalMechanics->setRaan(45.0f);
-        m_orbitalMechanics->setArgPeriapsis(0.0f);
-    }
-    
-    ImGui::SameLine();
-    
-    if (ImGui::Button("Highly Elliptical")) {
-        m_orbitalMechanics->setSemimajorAxis(16.0f);
-        m_orbitalMechanics->setEccentricity(0.8f);
-        m_orbitalMechanics->setInclination(63.4f);
-        m_orbitalMechanics->setRaan(120.0f);
-        m_orbitalMechanics->setArgPeriapsis(270.0f);
-    }
-    
-    // Orbital information
+    // Orbital information section
     ImGui::Separator();
     ImGui::Text("Orbital Information");
     ImGui::Text("Period: %.2f seconds", m_orbitalMechanics->getPeriod());
-    ImGui::Text("Current Position: (%.2f, %.2f, %.2f)", 
-                satellitePosition.x, satellitePosition.y, satellitePosition.z);
+    ImGui::Text("Current Position: (%.2f, %.2f, %.2f)",
+               satellitePosition.x, satellitePosition.y, satellitePosition.z);
+    
+    // Add help tooltips
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::Text("Satellite position in 3D space");
+        ImGui::EndTooltip();
+    }
+    
+    if (ImGui::Button("Reset Orbit")) {
+        m_orbitalMechanics->setSemimajorAxis(12.0f);
+        m_orbitalMechanics->setEccentricity(0.3f);
+        m_orbitalMechanics->setInclination(30.0f);
+        m_orbitalMechanics->setArgumentOfPeriapsis(0.0f);
+        m_orbitalMechanics->setLongitudeOfAscendingNode(0.0f);
+    }
     
     ImGui::End();
     
-    // Frame rate information (add this if you want to display FPS)
-    ImGui::SetNextWindowPos(ImVec2(10, 10));
-    ImGui::SetNextWindowSize(ImVec2(200, 0));
-    ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | 
-                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove);
-    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+    // Render controls for help and about
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(200, 80), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Help", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    
+    if (ImGui::Button("About")) {
+        m_showAboutWindow = true;
+    }
+    
+    ImGui::SameLine();
+    
+    if (ImGui::Button("Controls Help")) {
+        m_showHelpWindow = true;
+    }
+    
     ImGui::End();
+    
+    // Show help window if needed
+    if (m_showHelpWindow) {
+        ImGui::Begin("Controls Help", &m_showHelpWindow);
+        ImGui::Text("Mouse Controls:");
+        ImGui::BulletText("Left click + drag: Rotate camera");
+        ImGui::BulletText("Mouse wheel: Zoom in/out");
+        ImGui::Text("\nKeyboard Controls:");
+        ImGui::BulletText("ESC: Quit application");
+        ImGui::End();
+    }
+    
+    // Show about window if needed
+    if (m_showAboutWindow) {
+        ImGui::Begin("About", &m_showAboutWindow);
+        ImGui::Text("Satellite Orbit Simulator");
+        ImGui::Text("Version 1.0");
+        ImGui::Separator();
+        ImGui::Text("A Vulkan-based satellite orbit simulator using");
+        ImGui::Text("Kepler's equations for realistic orbital mechanics.");
+        ImGui::Separator();
+        ImGui::Text("Built with:");
+        ImGui::BulletText("C++20, Vulkan, GLFW, ImGui");
+        ImGui::BulletText("HLSL shaders compiled to SPIR-V");
+        ImGui::End();
+    }
     
     m_uiManager->endFrame();
     
@@ -302,17 +320,4 @@ void Application::updateCamera() {
     
     // Update the renderer's view matrix
     m_renderer->updateCamera(m_cameraPosition, m_cameraTarget);
-}
-
-void Application::adjustCameraDistance(float delta) {
-    // Adjust camera distance with smooth zooming
-    float zoomSpeed = 0.5f;
-    m_cameraDistance += delta * zoomSpeed;
-    
-    // Clamp distance to reasonable range
-    if (m_cameraDistance < 8.0f) m_cameraDistance = 8.0f;
-    if (m_cameraDistance > 50.0f) m_cameraDistance = 50.0f;
-    
-    // Update camera
-    updateCamera();
 }
