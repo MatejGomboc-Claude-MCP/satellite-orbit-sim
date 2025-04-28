@@ -434,36 +434,36 @@ void Renderer::createRenderPass() {
 }
 
 void Renderer::createGraphicsPipelines() {
-    // Load shaders
-    VkShaderModule earthVertShaderModule = createShaderModule("shaders/earth.vert.spv");
-    VkShaderModule earthFragShaderModule = createShaderModule("shaders/earth.frag.spv");
-    VkShaderModule satelliteVertShaderModule = createShaderModule("shaders/satellite.vert.spv");
-    VkShaderModule satelliteFragShaderModule = createShaderModule("shaders/satellite.frag.spv");
+    // Load shaders (HLSL compiled to SPIR-V using DXC)
+    VkShaderModule earthVertShaderModule = createShaderModule("shaders/earth_vert.spv");
+    VkShaderModule earthFragShaderModule = createShaderModule("shaders/earth_frag.spv");
+    VkShaderModule satelliteVertShaderModule = createShaderModule("shaders/satellite_vert.spv");
+    VkShaderModule satelliteFragShaderModule = createShaderModule("shaders/satellite_frag.spv");
     
     // Shader stage creation
     VkPipelineShaderStageCreateInfo earthVertShaderStageInfo{};
     earthVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     earthVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     earthVertShaderStageInfo.module = earthVertShaderModule;
-    earthVertShaderStageInfo.pName = "main";
+    earthVertShaderStageInfo.pName = "VSMain";  // Changed to HLSL entry point name
     
     VkPipelineShaderStageCreateInfo earthFragShaderStageInfo{};
     earthFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     earthFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     earthFragShaderStageInfo.module = earthFragShaderModule;
-    earthFragShaderStageInfo.pName = "main";
+    earthFragShaderStageInfo.pName = "PSMain";  // Changed to HLSL entry point name
     
     VkPipelineShaderStageCreateInfo satelliteVertShaderStageInfo{};
     satelliteVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     satelliteVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     satelliteVertShaderStageInfo.module = satelliteVertShaderModule;
-    satelliteVertShaderStageInfo.pName = "main";
+    satelliteVertShaderStageInfo.pName = "VSMain";  // Changed to HLSL entry point name
     
     VkPipelineShaderStageCreateInfo satelliteFragShaderStageInfo{};
     satelliteFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     satelliteFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     satelliteFragShaderStageInfo.module = satelliteFragShaderModule;
-    satelliteFragShaderStageInfo.pName = "main";
+    satelliteFragShaderStageInfo.pName = "PSMain";  // Changed to HLSL entry point name
     
     VkPipelineShaderStageCreateInfo earthShaderStages[] = {
         earthVertShaderStageInfo, earthFragShaderStageInfo
