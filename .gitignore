@@ -1,0 +1,41 @@
+# Build directory
+build/
+out/
+cmake-build-*/
+
+# Compiled shader files
+*.spv
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Compiled object files
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+
+# Compiled executables
+*.exe
+*.out
+*.app
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.cmake
+
+# Dependencies
+external/
+
+# System files
+.DS_Store
+Thumbs.db
