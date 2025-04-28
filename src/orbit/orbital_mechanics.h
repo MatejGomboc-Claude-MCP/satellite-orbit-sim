@@ -45,11 +45,15 @@ public:
     float getSemimajorAxis() const { return m_semimajorAxis; }
     float getEccentricity() const { return m_eccentricity; }
     float getInclination() const { return m_inclination; }
+    float getRaan() const { return m_raan; }
+    float getArgPeriapsis() const { return m_argPeriapsis; }
     
     // Setters for orbital parameters
     void setSemimajorAxis(float value);
     void setEccentricity(float value);
     void setInclination(float value);
+    void setRaan(float value);
+    void setArgPeriapsis(float value);
     
 private:
     // Earth parameters (in arbitrary units)
@@ -60,6 +64,8 @@ private:
     float m_semimajorAxis;  // Semi-major axis of the elliptical orbit
     float m_eccentricity;   // Eccentricity of the orbit
     float m_inclination;    // Inclination in degrees
+    float m_raan;           // Right Ascension of the Ascending Node (RAAN) in degrees
+    float m_argPeriapsis;   // Argument of periapsis in degrees
     
     // Current state
     float m_meanAnomaly;    // Current mean anomaly (varies linearly with time)
@@ -82,10 +88,18 @@ private:
     float calculatePeriod() const;
     
     /**
-     * Converts eccentric anomaly to 3D position vector.
+     * Converts eccentric anomaly to position vector in the orbital plane.
      * 
      * @param eccentricAnomaly The eccentric anomaly
+     * @return 2D position vector in the orbital plane
+     */
+    glm::vec2 calculatePositionInOrbitalPlane(float eccentricAnomaly) const;
+    
+    /**
+     * Converts position in orbital plane to 3D position in reference frame.
+     * 
+     * @param positionInOrbitalPlane 2D position in orbital plane
      * @return 3D position vector
      */
-    glm::vec3 calculatePosition(float eccentricAnomaly) const;
+    glm::vec3 transformToReferenceFrame(const glm::vec2& positionInOrbitalPlane) const;
 };
