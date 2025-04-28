@@ -14,6 +14,7 @@ A cross-platform (Windows, Linux, macOS) Vulkan-based simulator showing a satell
   - Time controls to speed up, slow down, or pause the simulation
   - Adjustable orbital parameters (semi-major axis, eccentricity, inclination)
 - **Cross-Platform Support**: Works on Windows, Linux, and macOS
+- **Modern Shader Support**: Uses HLSL shaders compiled to SPIR-V via the DirectX Shader Compiler (DXC)
 
 ## Technical Details
 
@@ -23,6 +24,7 @@ A cross-platform (Windows, Linux, macOS) Vulkan-based simulator showing a satell
 - **User Interface**: Dear ImGui
 - **Build System**: CMake 3.16+
 - **Language**: C++20
+- **Shader Language**: HLSL (Direct3D style)
 
 ## Building
 
@@ -86,6 +88,16 @@ The mathematical model solves Kepler's equation to convert from time to position
 - Position is calculated in the orbital plane
 - Position is transformed based on inclination to get the 3D coordinates
 
+## Shader System
+
+This project uses Direct3D-style HLSL (High-Level Shading Language) shaders instead of traditional GLSL shaders for Vulkan. The HLSL shaders are compiled to SPIR-V bytecode using the DirectX Shader Compiler (DXC), which is part of the Vulkan SDK and provides compatibility with Vulkan while keeping the shader code in the familiar Direct3D style.
+
+Key shader components:
+- `earth.hlsl` - Combined vertex/pixel shader for Earth visualization
+- `satellite.hlsl` - Combined vertex/pixel shader for satellite rendering
+
+The build system will automatically detect and use DXC if available, with a fallback to glslc for GLSL shaders if needed.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -100,3 +112,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - [GLFW](https://www.glfw.org/) for cross-platform window management
 - [GLM](https://github.com/g-truc/glm) for mathematics
 - [Dear ImGui](https://github.com/ocornut/imgui) for the user interface
+- [DirectX Shader Compiler](https://github.com/microsoft/DirectXShaderCompiler) for HLSL to SPIR-V compilation
